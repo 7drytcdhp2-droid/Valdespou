@@ -1,0 +1,11 @@
+import {test,after,before} from 'node:test';
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+let child;
+const base='http://127.0.0.1:3197';
+before(async()=>{child=spawn(process.execPath,['server.js'],{env:{...process.env,PORT:'3197'},stdio:['ignore','pipe','pipe']});await new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(new Error('Startup timed out')),5000);child.once('error',reject);child.once('exit',code=>reject(new Error(`Server exited: ${code}`)));child.stdout.once('data',()=>{clearTimeout(timeout);resolve();});});});
+after(()=>child?.kill());
+test('health reports demo with no connected integrations',async()=>{const r=await fetch(`${base}/api/health`);assert.equal(r.status,200);assert.deepEqual(await r.json(),{status:'ok',mode:'demo',integrationsConnected:false});});
+test('homepage includes demo disclosure and integration cards',async()=>{const r=await fetch(base);const html=await r.text();assert.equal(r.status,200);for(const text of ['Sample workspace','Gmail','Google Calendar','Instagram','not connected'])assert.ok(html.includes(text),text);assert.ok(r.headers.get('content-security-policy').includes("script-src 'self'"));});
+test('browser assets are served with correct content types',async()=>{for(const [path,type] of [['/app.js','text/javascript'],['/style.css','text/css']]){const r=await fetch(base+path);assert.equal(r.status,200);assert.ok(r.headers.get('content-type').startsWith(type));assert.ok((await r.text()).length>100);}});
+test('private files and unsupported writes are inaccessible',async()=>{for(const path of ['/.env','/package.json','/server.js','/.git/config'])assert.equal((await fetch(base+path)).status,404);assert.equal((await fetch(base,{method:'POST'})).status,404);});
